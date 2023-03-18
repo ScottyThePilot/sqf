@@ -1,8 +1,11 @@
+#[cfg(feature = "compiler")]
 extern crate byteorder;
-extern crate lzo1x_1 as lzo;
+#[cfg(feature = "compiler")]
+extern crate lzo;
 #[macro_use]
 extern crate thiserror;
 
+#[cfg(feature = "compiler")]
 pub mod compiler;
 
 
