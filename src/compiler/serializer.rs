@@ -3,7 +3,9 @@
 //! which can be cumbersome to manage. For this reason, you should use structs from the
 //! [`compiler`][crate::compiler] module instead.
 
-mod print;
+mod display;
+
+pub use self::display::{DisplayConstant, DisplayInstructions};
 
 use byteorder::{LE, ReadBytesExt, WriteBytesExt};
 
@@ -66,6 +68,20 @@ pub enum InstructionContent {
 }
 
 impl InstructionContent {
+  pub const fn name(&self) -> &'static str {
+    match self {
+      Self::EndStatement => "EndStatement",
+      Self::Push(..) => "Push",
+      Self::CallUnary(..) => "CallUnary",
+      Self::CallBinary(..) => "CallBinary",
+      Self::CallNular(..) => "CallNular",
+      Self::AssignTo(..) => "AssignTo",
+      Self::AssignToLocal(..) => "AssignToLocal",
+      Self::GetVariable(..) => "GetVariable",
+      Self::MakeArray(..) => "MakeArray"
+    }
+  }
+
   fn to_byte(&self) -> u8 {
     match *self {
       Self::EndStatement => 0,
@@ -160,6 +176,11 @@ pub struct Instructions {
 }
 
 impl Instructions {
+  #[inline]
+  pub const fn display<'a>(&'a self, compiled: &'a Compiled) -> DisplayInstructions<'a> {
+    DisplayInstructions { compiled, instructions: self, indent: 0 }
+  }
+
   pub fn serialize(&self, compiled: &Compiled, writer: &mut impl Write) -> SerializeResult {
     writer.write_u64::<LE>(self.source_string_index as u64)?;
     let instructions_len = try_truncate_or(self.contents.len(), SerializeError::InstructionsLimit)?;
@@ -192,6 +213,11 @@ pub enum Constant {
 }
 
 impl Constant {
+  #[inline]
+  pub const fn display<'a>(&'a self, compiled: &'a Compiled) -> DisplayConstant<'a> {
+    DisplayConstant { compiled, constant: self, indent: 0 }
+  }
+
   fn to_byte(&self) -> u8 {
     match *self {
       Self::Code(..) => 0,
@@ -313,6 +339,11 @@ pub struct Compiled {
 }
 
 impl Compiled {
+  #[inline]
+  pub fn display<'a>(&'a self) -> DisplayInstructions<'a> {
+    self.get_entry_point().expect("expected valid entrypoint").display(self)
+  }
+
   fn assert_has_constant(&self, index: u16) -> SerializeResult<()> {
     if self.constants_cache.len() <= index as usize {
       Err(SerializeError::InvalidConstantIndex(index))
