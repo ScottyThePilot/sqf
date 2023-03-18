@@ -1,12 +1,17 @@
 #[cfg(feature = "compiler")]
-extern crate byteorder;
-#[cfg(feature = "compiler")]
-extern crate lzo;
+pub mod compiler;
+#[cfg(feature = "parser")]
+pub mod parser;
+
 #[macro_use]
 extern crate thiserror;
-
 #[cfg(feature = "compiler")]
-pub mod compiler;
+extern crate byteorder;
+#[cfg(feature = "parser")]
+extern crate chumsky;
+#[cfg(feature = "compiler")]
+extern crate lzo;
+
 
 
 #[derive(Debug, Clone, PartialEq)]
