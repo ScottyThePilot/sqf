@@ -117,7 +117,7 @@ impl crate::Expression {
       Self::String(ref string) => {
         Some(Constant::String(string.clone()))
       },
-      Self::Number(number) => {
+      Self::Number(crate::Scalar(number)) => {
         Some(Constant::Scalar(number))
       },
       Self::Boolean(boolean) => {
@@ -129,7 +129,7 @@ impl crate::Expression {
           .collect::<CompileResult<Option<Vec<Constant>>>>()?
           .map(Constant::Array)
       },
-      Self::NularCommandConstant(ref name) => {
+      Self::NularConstant(ref name) => {
         Some(Constant::NularCommand(name.to_lowercase()))
       },
       _ => None

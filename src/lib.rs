@@ -9,12 +9,15 @@ extern crate thiserror;
 extern crate byteorder;
 #[cfg(feature = "parser")]
 extern crate chumsky;
+extern crate float_ord;
 #[cfg(feature = "compiler")]
 extern crate lzo;
 
+pub use float_ord::FloatOrd as Scalar;
 
 
-#[derive(Debug, Clone, PartialEq)]
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Statements {
   pub content: Vec<Statement>,
   /// The source code string of this section of code.
@@ -35,7 +38,7 @@ impl From<Vec<Statement>> for Statements {
   }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Statement {
   AssignGlobal(String, Expression),
   AssignLocal(String, Expression),
@@ -48,14 +51,14 @@ impl From<Expression> for Statement {
   }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Expression {
   Code(Statements),
   String(String),
-  Number(f32),
+  Number(Scalar<f32>),
   Boolean(bool),
   Array(Vec<Self>),
-  NularCommandConstant(String),
+  NularConstant(String),
   NularCommand(String),
   UnaryCommand(String, Box<Self>),
   BinaryCommand(String, Box<Self>, Box<Self>),

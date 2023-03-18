@@ -16,7 +16,7 @@ pub fn strip_comments_and_macros(tokens: &mut Tokens) {
 
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Token {
   /// Single-line or multi-line comment.
   /// Contains the entire contents of the comment.
@@ -28,14 +28,14 @@ pub enum Token {
   /// A special control character.
   Control(Control),
   /// A scalar number literal.
-  Number(f32),
+  Number(crate::Scalar<f32>),
   /// An identifier or word, including most keywords.
   Identifier(String),
   /// A string literal.
   String(String)
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Control {
   Terminator,
   Separator,
@@ -47,7 +47,7 @@ pub enum Control {
   CurlyBracketClose
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Operator {
   Not, Or, And,
   Eq, NotEq,
@@ -73,7 +73,7 @@ pub fn lexer() -> impl Parser<char, Tokens, Error = Simple<char>> {
 
 fn lexer_base<A>(additional: A) -> impl Parser<char, Tokens, Error = Simple<char>>
 where A: Parser<char, Token, Error = Simple<char>> {
-  let number = number().map(Token::Number);
+  let number = number().map(crate::Scalar).map(Token::Number);
   let identifier = ident().map(Token::Identifier);
   let string = string('\"').or(string('\'')).map(Token::String);
 

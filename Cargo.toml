@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 byteorder = { version = "1.4.3", optional = true }
 chumsky = { version = "0.9.2", optional = true }
+float-ord = "0.3.2"
 lzo = { version = "0.1.0", optional = true, package = "lzo1x-1" }
 thiserror = "1.0.38"
 
