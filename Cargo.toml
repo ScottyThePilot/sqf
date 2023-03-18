@@ -1,2 +1,9 @@
-[workspace]
-members = ["sqfcgen"]
+[package]
+name = "sqf"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+byteorder = "1.4.3"
+lzo1x-1 = "0.1.0"
+thiserror = "1.0.38"

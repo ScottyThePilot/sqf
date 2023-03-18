@@ -8,82 +8,11 @@
 //! You can also construct statements/expressions with (relatively) little pain by using
 //! the [`stmt`], [`stmts`] and [`expr`] macros.
 
-use crate::serializer::{Compiled, Constant, Instruction, Instructions, InstructionContent};
+pub mod serializer;
 
-/// Helper macro for creating instances of [`Statements`].
-#[macro_export]
-macro_rules! stmts {
-  ($($statement:expr),* $(,)?) => {
-    $crate::compiler::Statements::from(vec![$($statement),*])
-  };
-}
+use self::serializer::{Compiled, Constant, Instruction, Instructions, InstructionContent};
 
-/// Helper macro for creating instances of [`Statement`].
-#[macro_export]
-macro_rules! stmt {
-  (assign_global $name:literal $expression:expr) => (
-    $crate::compiler::Statement::AssignGlobal($name.into(), $expression)
-  );
-  (assign_local $name:literal $expression:expr) => (
-    $crate::compiler::Statement::AssignLocal($name.into(), $expression)
-  );
-  ($($t:tt)*) => (
-    $crate::compiler::Statement::Expression($crate::expr!($($t)*))
-  );
-}
-
-/// Helper macro for creating instances of [`Expression`].
-#[macro_export]
-macro_rules! expr {
-  (code {$($statement:expr),* $(,)?}) => (
-    $crate::compiler::Expression::Code($crate::stmts![$($statement,)*])
-  );
-  (string $string:expr) => (
-    $crate::compiler::Expression::String($string.into())
-  );
-  (number $number:expr) => (
-    $crate::compiler::Expression::Number($number)
-  );
-  (true) => (
-    $crate::compiler::Expression::Boolean(true)
-  );
-  (false) => (
-    $crate::compiler::Expression::Boolean(false)
-  );
-  (array [$($expression:expr),* $(,)?]) => (
-    $crate::compiler::Expression::Array(vec![$($expression,)*])
-  );
-  (nular_constant $command:literal $(())?) => (
-    $crate::compiler::Expression::NularCommandConstant($command.into())
-  );
-  (nular $command:literal $(())?) => (
-    $crate::compiler::Expression::NularCommand($command.into())
-  );
-  (unary $command:literal ($arg:expr $(,)?)) => (
-    $crate::compiler::Expression::UnaryCommand($command.into(), Box::new($arg))
-  );
-  (binary $command:literal ($arg1:expr, $arg2:expr $(,)?)) => (
-    $crate::compiler::Expression::BinaryCommand($command.into(), Box::new($arg1), Box::new($arg2))
-  );
-  (variable $name:literal) => (
-    $crate::compiler::Expression::Variable($name.into())
-  );
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Statements {
-  pub content: Vec<Statement>,
-  /// The source code string of this section of code.
-  /// This isn't required to actually be anything significant, but will be displayed in-game if a script error occurs.
-  pub source: String
-}
-
-impl Statements {
-  /// Adds a source string to this code chunk.
-  pub fn with_source(self, source: String) -> Self {
-    Statements { content: self.content, source }
-  }
-
+impl crate::Statements {
   /// Converts this statements list into a [`Compiled`].
   /// A file name must be provided for debugging purposes.
   pub fn compile(&self, file_name: &str) -> CompileResult<Compiled> {
@@ -115,20 +44,7 @@ impl Statements {
   }
 }
 
-impl From<Vec<Statement>> for Statements {
-  fn from(content: Vec<Statement>) -> Self {
-    Statements { content, source: String::new() }
-  }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Statement {
-  AssignGlobal(String, Expression),
-  AssignLocal(String, Expression),
-  Expression(Expression)
-}
-
-impl Statement {
+impl crate::Statement {
   pub(crate) fn compile_instructions(&self, instructions: &mut Vec<Instruction>, ctx: &mut Context) -> CompileResult {
     instructions.push(InstructionContent::EndStatement.full());
     match self {
@@ -151,27 +67,7 @@ impl Statement {
   }
 }
 
-impl From<Expression> for Statement {
-  fn from(expression: Expression) -> Self {
-    Statement::Expression(expression)
-  }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Expression {
-  Code(Statements),
-  String(String),
-  Number(f32),
-  Boolean(bool),
-  Array(Vec<Self>),
-  NularCommandConstant(String),
-  NularCommand(String),
-  UnaryCommand(String, Box<Self>),
-  BinaryCommand(String, Box<Self>, Box<Self>),
-  Variable(String)
-}
-
-impl Expression {
+impl crate::Expression {
   pub(crate) fn compile_instructions(&self, instructions: &mut Vec<Instruction>, ctx: &mut Context) -> CompileResult {
     match self.compile_constant(ctx)? {
       Some(constant) => {
