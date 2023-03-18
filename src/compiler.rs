@@ -4,9 +4,6 @@
 //!
 //! The main entrypoint to this is the [`Statements`] struct, which can be converted to a
 //! serializable [`Compiled`] via [`Statements::compile`].
-//!
-//! You can also construct statements/expressions with (relatively) little pain by using
-//! the [`stmt`], [`stmts`] and [`expr`] macros.
 
 pub mod serializer;
 

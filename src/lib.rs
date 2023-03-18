@@ -3,6 +3,8 @@ pub mod compiler;
 #[cfg(feature = "parser")]
 pub mod parser;
 
+mod misc;
+
 #[macro_use]
 extern crate thiserror;
 #[cfg(feature = "compiler")]
