@@ -2,8 +2,8 @@
 //! this module contains structs that allow for the creation of a sort of intermediate form
 //! which can generate these lists automatically.
 //!
-//! The main entrypoint to this is the [`Statements`] struct, which can be converted to a
-//! serializable [`Compiled`] via [`Statements::compile`].
+//! The main entrypoint to this is the [`Statements`][crate::Statements] struct, which can be
+//! converted to a serializable [`Compiled`] via [`Statements::compile`][crate::Statements].
 
 pub mod serializer;
 
@@ -80,19 +80,19 @@ impl crate::Expression {
 
           instructions.push(InstructionContent::MakeArray(array_len).full());
         },
-        Self::NularCommand(name) => {
-          let name_index = ctx.add_name(name)?;
+        Self::NularCommand(command) => {
+          let name_index = ctx.add_name(command.to_str())?;
           instructions.push(InstructionContent::CallNular(name_index).full());
         },
-        Self::UnaryCommand(name, expr) => {
+        Self::UnaryCommand(command, expr) => {
           expr.compile_instructions(instructions, ctx)?;
-          let name_index = ctx.add_name(name)?;
+          let name_index = ctx.add_name(command.to_str())?;
           instructions.push(InstructionContent::CallUnary(name_index).full());
         },
-        Self::BinaryCommand(name, expr1, expr2) => {
+        Self::BinaryCommand(command, expr1, expr2) => {
           expr1.compile_instructions(instructions, ctx)?;
           expr2.compile_instructions(instructions, ctx)?;
-          let name_index = ctx.add_name(name)?;
+          let name_index = ctx.add_name(command.to_str())?;
           instructions.push(InstructionContent::CallBinary(name_index).full());
         },
         Self::Variable(name) => {
@@ -126,8 +126,8 @@ impl crate::Expression {
           .collect::<CompileResult<Option<Vec<Constant>>>>()?
           .map(Constant::Array)
       },
-      Self::NularConstant(ref name) => {
-        Some(Constant::NularCommand(name.to_lowercase()))
+      Self::NularCommand(ref command) if command.is_constant() => {
+        Some(Constant::NularCommand(command.to_str().to_lowercase()))
       },
       _ => None
     })

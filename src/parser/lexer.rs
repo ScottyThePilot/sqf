@@ -10,7 +10,8 @@ macro_rules! chain_collect {
   };
 }
 
-pub fn strip_comments_and_macros(tokens: &mut Tokens) {
+/// Will strip comments and macros from the given tokens list.
+pub fn strip(tokens: &mut Tokens) {
   tokens.retain(|(token, _)| !matches!(token, Token::Comment(..) | Token::Macro(..)));
 }
 
@@ -22,19 +23,20 @@ pub enum Token {
   /// Contains the entire contents of the comment.
   Comment(String),
   /// A pre-processor macro.
-  Macro(String, Tokens),
+  Macro(String, Vec<Token>),
   /// An operator.
   Operator(Operator),
   /// A special control character.
   Control(Control),
   /// A scalar number literal.
   Number(crate::Scalar<f32>),
-  /// An identifier or word, including most keywords.
+  /// An identifier, keyword, or command.
   Identifier(String),
   /// A string literal.
   String(String)
 }
 
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Control {
   Terminator,
@@ -47,6 +49,22 @@ pub enum Control {
   CurlyBracketClose
 }
 
+impl Control {
+  pub const fn to_str(self) -> &'static str {
+    match self {
+      Self::Terminator => ";",
+      Self::Separator => ",",
+      Self::SquareBracketOpen => "[",
+      Self::SquareBracketClose => "]",
+      Self::RoundBracketOpen => "(",
+      Self::RoundBracketClose => ")",
+      Self::CurlyBracketOpen => "{",
+      Self::CurlyBracketClose => "}"
+    }
+  }
+}
+
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Operator {
   Not, Or, And,
@@ -65,14 +83,50 @@ pub enum Operator {
   MacroConcat,
 }
 
-/// Lexes a raw SQF file into a token list, to be passed onto the parser stage.
-#[inline]
-pub fn lexer() -> impl Parser<char, Tokens, Error = Simple<char>> {
-  lexer_base(preprocessor_token())
+impl Operator {
+  pub const fn to_str(self) -> &'static str {
+    match self {
+      Self::And => "&&",
+      Self::Or => "||",
+      Self::Eq => "==",
+      Self::NotEq => "!=",
+      Self::ConfigPath => ">>",
+      Self::GreaterEq => ">=",
+      Self::LessEq => "<=",
+      Self::Greater => ">",
+      Self::Less => "<",
+      Self::Not => "!",
+      Self::Add => "+",
+      Self::Sub => "-",
+      Self::Mul => "*",
+      Self::Div => "/",
+      Self::Rem => "%",
+      Self::Exp => "^",
+      Self::Assign => "=",
+      Self::Associate => ":",
+      Self::MacroQuote => "#",
+      Self::MacroConcat => "##"
+    }
+  }
 }
 
-fn lexer_base<A>(additional: A) -> impl Parser<char, Tokens, Error = Simple<char>>
-where A: Parser<char, Token, Error = Simple<char>> {
+/// Lexes a raw SQF file into a token list, to be passed onto the parser stage.
+pub fn run(input: impl AsRef<str>) -> Result<Tokens, Vec<Simple<char>>> {
+  lexer().parse(input.as_ref())
+}
+
+fn lexer() -> impl Parser<char, Tokens, Error = Simple<char>> {
+  preprocessor_token().or(base())
+    .map_with_span(|token, span| (token, span))
+    .padded().repeated().then_ignore(end())
+}
+
+fn lexer_macro_inner() -> impl Parser<char, Vec<Token>, Error = Simple<char>> {
+  macro_operator().map(Token::Operator).or(base())
+    .padded().repeated().then_ignore(end())
+}
+
+fn base() -> impl Parser<char, Token, Error = Simple<char>> {
   let number = number().map(crate::Scalar).map(Token::Number);
   let identifier = ident().map(Token::Identifier);
   let string = string('\"').or(string('\'')).map(Token::String);
@@ -83,15 +137,10 @@ where A: Parser<char, Token, Error = Simple<char>> {
   let not_constant = constant.clone().not().ignored().or(end()).rewind();
 
   choice((
-    additional,
     operator().map(Token::Operator),
     control().map(Token::Control),
     constant.then_ignore(not_constant)
   ))
-    .padded()
-    .map_with_span(|token, span| (token, span))
-    .repeated()
-    .then_ignore(end())
 }
 
 /// Captures comments and preprocessor macros
@@ -107,13 +156,13 @@ fn preprocessor_token() -> impl Parser<char, Token, Error = Simple<char>> {
 // The current way I'm handling macros is to capture everything after the
 // `#`, and any subsequent lines (as long as the previous line ended with a `\`)
 // and then split that content into tokens to pass on to the parser
-fn preprocessor_macro() -> impl Parser<char, (String, Tokens), Error = Simple<char>> {
+fn preprocessor_macro() -> impl Parser<char, (String, Vec<Token>), Error = Simple<char>> {
   let newline_escape = just('\\').then(newline()).to('\n');
   let content = newline_escape.or(newline().not()).repeated().collect::<String>();
   just('#').ignore_then(ident()).then(content).try_map(|(command, content), _| {
     // TODO: consider changing this out for something better
     // right now i'm just using the lexer itself because it's simple
-    lexer_base(macro_operator().map(Token::Operator)).parse(content)
+    lexer_macro_inner().parse(content)
       .map_err(|errors| errors.into_iter().next().unwrap())
       .map(|tokens| (command, tokens))
   })
