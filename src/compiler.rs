@@ -7,9 +7,10 @@
 
 pub mod serializer;
 
-use self::serializer::{Compiled, Constant, Instruction, Instructions, InstructionContent};
+use crate::{Expression, Statements, Statement};
+use self::serializer::{Compiled, Constant, Instruction, Instructions};
 
-impl crate::Statements {
+impl Statements {
   /// Converts this statements list into a [`Compiled`].
   /// A file name must be provided for debugging purposes.
   pub fn compile(&self, file_name: &str) -> CompileResult<Compiled> {
@@ -41,21 +42,21 @@ impl crate::Statements {
   }
 }
 
-impl crate::Statement {
+impl Statement {
   pub(crate) fn compile_instructions(&self, instructions: &mut Vec<Instruction>, ctx: &mut Context) -> CompileResult {
-    instructions.push(InstructionContent::EndStatement.full());
-    match self {
-      Self::AssignGlobal(name, expression) => {
+    instructions.push(Instruction::EndStatement);
+    match *self {
+      Self::AssignGlobal(ref name, ref expression, location) => {
         expression.compile_instructions(instructions, ctx)?;
         let name_index = ctx.add_name(name)?;
-        instructions.push(InstructionContent::AssignTo(name_index).full());
+        instructions.push(Instruction::AssignTo(name_index, location.into()));
       },
-      Self::AssignLocal(name, expression) => {
+      Self::AssignLocal(ref name, ref expression, location) => {
         expression.compile_instructions(instructions, ctx)?;
         let name_index = ctx.add_name(name)?;
-        instructions.push(InstructionContent::AssignToLocal(name_index).full());
+        instructions.push(Instruction::AssignToLocal(name_index, location.into()));
       },
-      Self::Expression(expression) => {
+      Self::Expression(ref expression) => {
         expression.compile_instructions(instructions, ctx)?;
       }
     };
@@ -64,40 +65,40 @@ impl crate::Statement {
   }
 }
 
-impl crate::Expression {
+impl Expression {
   pub(crate) fn compile_instructions(&self, instructions: &mut Vec<Instruction>, ctx: &mut Context) -> CompileResult {
     match self.compile_constant(ctx)? {
       Some(constant) => {
         let constant_index = ctx.add_constant(constant)?;
-        instructions.push(InstructionContent::Push(constant_index).full());
+        instructions.push(Instruction::Push(constant_index));
       },
-      None => match self {
-        Self::Array(array) => {
+      None => match *self {
+        Self::Array(ref array, location) => {
           let array_len = array.len().try_into().map_err(|_| CompileError::ListTooLong)?;
           for array_expr in array.into_iter() {
             array_expr.compile_instructions(instructions, ctx)?;
           };
 
-          instructions.push(InstructionContent::MakeArray(array_len).full());
+          instructions.push(Instruction::MakeArray(array_len, location.into()));
         },
-        Self::NularCommand(command) => {
+        Self::NularCommand(ref command, location) => {
           let name_index = ctx.add_name(command.to_str())?;
-          instructions.push(InstructionContent::CallNular(name_index).full());
+          instructions.push(Instruction::CallNular(name_index, location.into()));
         },
-        Self::UnaryCommand(command, expr) => {
+        Self::UnaryCommand(ref command, ref expr, location) => {
           expr.compile_instructions(instructions, ctx)?;
           let name_index = ctx.add_name(command.to_str())?;
-          instructions.push(InstructionContent::CallUnary(name_index).full());
+          instructions.push(Instruction::CallUnary(name_index, location.into()));
         },
-        Self::BinaryCommand(command, expr1, expr2) => {
+        Self::BinaryCommand(ref command, ref expr1, ref expr2, location) => {
           expr1.compile_instructions(instructions, ctx)?;
           expr2.compile_instructions(instructions, ctx)?;
           let name_index = ctx.add_name(command.to_str())?;
-          instructions.push(InstructionContent::CallBinary(name_index).full());
+          instructions.push(Instruction::CallBinary(name_index, location.into()));
         },
-        Self::Variable(name) => {
+        Self::Variable(ref name, location) => {
           let name_index = ctx.add_name(name)?;
-          instructions.push(InstructionContent::GetVariable(name_index).full());
+          instructions.push(Instruction::GetVariable(name_index, location.into()));
         },
         _ => unreachable!()
       }
@@ -120,13 +121,13 @@ impl crate::Expression {
       Self::Boolean(boolean) => {
         Some(Constant::Boolean(boolean))
       },
-      Self::Array(ref array) => {
+      Self::Array(ref array, ..) => {
         array.iter()
           .map(|value| value.clone().compile_constant(ctx))
           .collect::<CompileResult<Option<Vec<Constant>>>>()?
           .map(Constant::Array)
       },
-      Self::NularCommand(ref command) if command.is_constant() => {
+      Self::NularCommand(ref command, ..) if command.is_constant() => {
         Some(Constant::NularCommand(command.to_str().to_lowercase()))
       },
       _ => None

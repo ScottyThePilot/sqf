@@ -22,6 +22,12 @@ pub struct SourceInfo {
   pub file_line: u16
 }
 
+impl From<crate::parser::SourceLocation> for SourceInfo {
+  fn from(location: crate::parser::SourceLocation) -> Self {
+    SourceInfo { offset: location.offset as u32, file_index: 0, file_line: location.line as u16 }
+  }
+}
+
 impl SourceInfo {
   pub fn serialize(&self, writer: &mut impl Write) -> io::Result<()> {
     writer.write_u32::<LE>(self.offset)?;
@@ -39,35 +45,35 @@ impl SourceInfo {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum InstructionContent {
+pub enum Instruction {
   /// Counter to its name, this instruction seems to be used to *begin* statements.
   EndStatement,
   /// This instruction seems to take an index to the constant table, and pushes that constant onto the stack.
   Push(u16),
   /// This instruction seems to take an index to the name table,
   /// calling that command with that last value on the stack, placing result back on the stack.
-  CallUnary(u16),
+  CallUnary(u16, SourceInfo),
   /// This instruction seems to take an index to the name table,
   /// calling that command with the last two values on the stack, placing the result back on the stack.
-  CallBinary(u16),
+  CallBinary(u16, SourceInfo),
   /// This instruction seems to take an index to the name table,
   /// calling that command with no values from the stack, putting its result.
-  CallNular(u16),
+  CallNular(u16, SourceInfo),
   /// This instruction seems to take an index to the name table,
   /// assigning the last value on the stack to a variable with that name.
-  AssignTo(u16),
+  AssignTo(u16, SourceInfo),
   /// This instruction seems to take an index to the name table,
   /// assigning the last value on the stack to a variable with that name, locally.
-  AssignToLocal(u16),
+  AssignToLocal(u16, SourceInfo),
   /// This instruction seems to take an index to the name table,
   /// retrieving the value of that variable, placing it on the stack.
-  GetVariable(u16),
+  GetVariable(u16, SourceInfo),
   /// This instruction seems to take a numeric length, which determines how many values
   /// from the stack it should consume to create an array, which it places back on the stack.
-  MakeArray(u16)
+  MakeArray(u16, SourceInfo)
 }
 
-impl InstructionContent {
+impl Instruction {
   pub const fn name(&self) -> &'static str {
     match self {
       Self::EndStatement => "EndStatement",
@@ -96,44 +102,27 @@ impl InstructionContent {
     }
   }
 
-  pub(crate) fn full(self) -> Instruction {
-    Instruction { content: self, source_info: SourceInfo::default() }
-  }
-}
+  pub fn serialize(self, compiled: &Compiled, writer: &mut impl Write) -> SerializeResult {
+    writer.write_u8(self.to_byte())?;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Instruction {
-  pub content: InstructionContent,
-  /// Source code info for this instruction, used for debugging purposes.
-  /// This value is not serialized for [`InstructionContent::EndStatement`]
-  /// or [`InstructionContent::Push`] instructions.
-  pub source_info: SourceInfo
-}
-
-impl Instruction {
-  pub fn serialize(&self, compiled: &Compiled, writer: &mut impl Write) -> SerializeResult {
-    writer.write_u8(self.content.to_byte())?;
-
-    if !matches!(self.content, InstructionContent::EndStatement | InstructionContent::Push(..)) {
-      self.source_info.serialize(writer)?;
-    };
-
-    match self.content {
-      InstructionContent::EndStatement => (),
-      InstructionContent::Push(constant_index) => {
+    match self {
+      Instruction::EndStatement => (),
+      Instruction::Push(constant_index) => {
         compiled.assert_has_constant(constant_index)?;
         writer.write_u16::<LE>(constant_index)?;
       },
-      InstructionContent::CallUnary(name_index) |
-      InstructionContent::CallBinary(name_index) |
-      InstructionContent::CallNular(name_index) |
-      InstructionContent::AssignTo(name_index) |
-      InstructionContent::AssignToLocal(name_index) |
-      InstructionContent::GetVariable(name_index) => {
+      Instruction::CallUnary(name_index, source_info) |
+      Instruction::CallBinary(name_index, source_info) |
+      Instruction::CallNular(name_index, source_info) |
+      Instruction::AssignTo(name_index, source_info) |
+      Instruction::AssignToLocal(name_index, source_info) |
+      Instruction::GetVariable(name_index, source_info) => {
+        source_info.serialize(writer)?;
         compiled.assert_has_name(name_index)?;
         writer.write_u16::<LE>(name_index)?;
       },
-      InstructionContent::MakeArray(array_len) => {
+      Instruction::MakeArray(array_len, source_info) => {
+        source_info.serialize(writer)?;
         writer.write_u16::<LE>(array_len)?;
       }
     };
@@ -151,20 +140,18 @@ impl Instruction {
       SourceInfo::default()
     };
 
-    let content = match tag {
-      0 => InstructionContent::EndStatement,
-      1 => InstructionContent::Push(reader.read_u16::<LE>()?),
-      2 => InstructionContent::CallUnary(reader.read_u16::<LE>()?),
-      3 => InstructionContent::CallBinary(reader.read_u16::<LE>()?),
-      4 => InstructionContent::CallNular(reader.read_u16::<LE>()?),
-      5 => InstructionContent::AssignTo(reader.read_u16::<LE>()?),
-      6 => InstructionContent::AssignToLocal(reader.read_u16::<LE>()?),
-      7 => InstructionContent::GetVariable(reader.read_u16::<LE>()?),
-      8 => InstructionContent::MakeArray(reader.read_u16::<LE>()?),
-      tag => return Err(DeserializeError::InvalidTagInstruction(tag))
-    };
-
-    Ok(Instruction { content, source_info })
+    match tag {
+      0 => Ok(Instruction::EndStatement),
+      1 => Ok(Instruction::Push(reader.read_u16::<LE>()?)),
+      2 => Ok(Instruction::CallUnary(reader.read_u16::<LE>()?, source_info)),
+      3 => Ok(Instruction::CallBinary(reader.read_u16::<LE>()?, source_info)),
+      4 => Ok(Instruction::CallNular(reader.read_u16::<LE>()?, source_info)),
+      5 => Ok(Instruction::AssignTo(reader.read_u16::<LE>()?, source_info)),
+      6 => Ok(Instruction::AssignToLocal(reader.read_u16::<LE>()?, source_info)),
+      7 => Ok(Instruction::GetVariable(reader.read_u16::<LE>()?, source_info)),
+      8 => Ok(Instruction::MakeArray(reader.read_u16::<LE>()?, source_info)),
+      tag => Err(DeserializeError::InvalidTagInstruction(tag))
+    }
   }
 }
 

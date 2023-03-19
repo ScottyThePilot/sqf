@@ -15,6 +15,8 @@ extern crate float_ord;
 #[cfg(feature = "compiler")]
 extern crate lzo;
 
+use crate::parser::SourceLocation;
+
 #[doc(no_inline)]
 pub use float_ord::FloatOrd as Scalar;
 
@@ -43,15 +45,9 @@ impl From<Vec<Statement>> for Statements {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Statement {
-  AssignGlobal(String, Expression),
-  AssignLocal(String, Expression),
+  AssignGlobal(String, Expression, SourceLocation),
+  AssignLocal(String, Expression, SourceLocation),
   Expression(Expression)
-}
-
-impl From<Expression> for Statement {
-  fn from(expression: Expression) -> Self {
-    Statement::Expression(expression)
-  }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -60,11 +56,11 @@ pub enum Expression {
   String(String),
   Number(Scalar<f32>),
   Boolean(bool),
-  Array(Vec<Self>),
-  NularCommand(NularCommand),
-  UnaryCommand(UnaryCommand, Box<Self>),
-  BinaryCommand(BinaryCommand, Box<Self>, Box<Self>),
-  Variable(String)
+  Array(Vec<Self>, SourceLocation),
+  NularCommand(NularCommand, SourceLocation),
+  UnaryCommand(UnaryCommand, Box<Self>, SourceLocation),
+  BinaryCommand(BinaryCommand, Box<Self>, Box<Self>, SourceLocation),
+  Variable(String, SourceLocation)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -93,14 +89,20 @@ impl NularCommand {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum UnaryCommand {
   /// A named command.
-  /// Non-alphanumeric commands (such as `==` or `!`) or commands with special precedence should not go here.
-  Named(String)
+  /// Non-alphanumeric commands (such as `==` or `!`) should not go here.
+  Named(String),
+  Plus,
+  Minus,
+  Not
 }
 
 impl UnaryCommand {
   pub fn to_str(&self) -> &str {
     match self {
-      Self::Named(name) => name
+      Self::Named(name) => name,
+      Self::Plus => "+",
+      Self::Minus => "-",
+      Self::Not => "!"
     }
   }
 }
@@ -109,13 +111,44 @@ impl UnaryCommand {
 pub enum BinaryCommand {
   /// A named command.
   /// Non-alphanumeric commands (such as `==` or `!`) or commands with special precedence should not go here.
-  Named(String)
+  Named(String),
+  Or, And,
+  Eq, NotEq,
+  Greater, Less,
+  GreaterEq, LessEq,
+  ConfigPath,
+  Associate,
+  Else,
+  Add, Sub, Max, Min,
+  Mul, Div, Rem, Mod, Atan2,
+  Exp
 }
 
 impl BinaryCommand {
   pub fn to_str(&self) -> &str {
     match self {
-      Self::Named(name) => name
+      Self::Named(name) => name,
+      Self::Or => "||",
+      Self::And => "&&",
+      Self::Eq => "==",
+      Self::NotEq => "!=",
+      Self::ConfigPath => ">>",
+      Self::GreaterEq => ">=",
+      Self::LessEq => "<=",
+      Self::Greater => ">",
+      Self::Less => "<",
+      Self::Else => "else",
+      Self::Add => "+",
+      Self::Sub => "-",
+      Self::Max => "max",
+      Self::Min => "min",
+      Self::Mul => "*",
+      Self::Div => "/",
+      Self::Rem => "%",
+      Self::Mod => "mod",
+      Self::Atan2 => "atan2",
+      Self::Exp => "^",
+      Self::Associate => ":"
     }
   }
 }

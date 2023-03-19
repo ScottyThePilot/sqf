@@ -1,4 +1,4 @@
-use super::{Compiled, Constant, Instructions, InstructionContent};
+use super::{Compiled, Constant, Instructions, Instruction};
 
 use std::fmt;
 
@@ -16,32 +16,30 @@ pub struct DisplayInstructions<'a> {
 
 impl<'a> fmt::Display for DisplayInstructions<'a> {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    for instruction in &self.instructions.contents {
+    for &instruction in &self.instructions.contents {
       indent(f, self.indent)?;
-      f.write_str(instruction.content.name())?;
+      f.write_str(instruction.name())?;
 
-      match instruction.content {
-        InstructionContent::EndStatement => (),
-        InstructionContent::Push(constant) => {
+      match instruction {
+        Instruction::EndStatement => (),
+        Instruction::Push(constant) => {
           f.write_str(" ")?;
           let constant = &self.compiled.constants_cache[constant as usize];
           fmt::Display::fmt(&DisplayConstant {
             compiled: self.compiled, constant, indent: self.indent
           }, f)?;
         },
-        InstructionContent::CallUnary(name) |
-        InstructionContent::CallBinary(name) |
-        InstructionContent::CallNular(name) |
-        InstructionContent::AssignTo(name) |
-        InstructionContent::AssignToLocal(name) |
-        InstructionContent::GetVariable(name) => {
+        Instruction::CallUnary(name, source_info) |
+        Instruction::CallBinary(name, source_info) |
+        Instruction::CallNular(name, source_info) |
+        Instruction::AssignTo(name, source_info) |
+        Instruction::AssignToLocal(name, source_info) |
+        Instruction::GetVariable(name, source_info) => {
           let name = &self.compiled.names_cache[name as usize];
-          let offset = instruction.source_info.offset;
-          write!(f, " {name} ({offset})")?;
+          write!(f, " {name} ({})", source_info.offset)?;
         },
-        InstructionContent::MakeArray(array_len) => {
-          let offset = instruction.source_info.offset;
-          write!(f, " {array_len} ({offset})")?;
+        Instruction::MakeArray(array_len, source_info) => {
+          write!(f, " {array_len} ({})", source_info.offset)?;
         }
       };
 

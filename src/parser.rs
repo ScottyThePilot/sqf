@@ -1,2 +1,256 @@
 pub mod database;
 pub mod lexer;
+
+use crate::{Statements, Statement, Expression, NularCommand, UnaryCommand, BinaryCommand};
+use self::database::{Database, is_special_command};
+use self::lexer::{Token, Span, Control, Operator};
+
+use chumsky::prelude::*;
+use chumsky::Stream;
+
+
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub struct SourceLocation {
+  pub line: usize,
+  pub offset: usize
+}
+
+pub fn run(database: &Database, input: impl AsRef<str>) -> Result<Statements, ParserError> {
+  let input = input.as_ref();
+  let tokens = self::lexer::run(input).map_err(ParserError::LexingError)?;
+  run_for_tokens(database, input, tokens).map_err(ParserError::ParsingError)
+}
+
+pub fn run_for_tokens<I>(database: &Database, source: impl AsRef<str>, input: I) -> Result<Statements, Vec<Simple<Token>>>
+where I: IntoIterator<Item = (Token, Span)> {
+  let source = Source::new(source.as_ref());
+  let eoi = source.total_len..source.total_len + 1;
+  let statements = parser(database, &source)
+    .parse(Stream::from_iter(eoi, input.into_iter()))?;
+  Ok(statements)
+}
+
+fn parser<'a, 'b: 'a>(database: &'a Database, source: &'b Source<'a>)
+-> impl Parser<Token, Statements, Error = Simple<Token>> + 'a + 'b {
+  statements(database, source).then_ignore(end())
+}
+
+fn statements<'a, 'b: 'a>(database: &'a Database, source: &'b Source<'a>)
+-> impl Parser<Token, Statements, Error = Simple<Token>> + 'a + 'b {
+  recursive(|statements| {
+    let expression = recursive(|expression| {
+      let value = select! { |span|
+        Token::Number(number) => Expression::Number(number),
+        Token::String(string) => Expression::String(string),
+        // i know you can *technically* redefine true and false to be something else in SQF,
+        // so this isn't *technically* correct, but if you're doing evil things like that,
+        // you don't deserve parity
+        Token::Identifier(id) if id.eq_ignore_ascii_case("true") => Expression::Boolean(true),
+        Token::Identifier(id) if id.eq_ignore_ascii_case("false") => Expression::Boolean(false),
+        Token::Identifier(id) if database.has_nular_command(&id) => {
+          Expression::NularCommand(NularCommand::Named(id), source.locate(span))
+        }
+      };
+
+      let array_open = just(Token::Control(Control::SquareBracketOpen));
+      let array_close = just(Token::Control(Control::SquareBracketClose));
+      let array = expression.clone()
+        .separated_by(just(Token::Control(Control::Separator))).allow_trailing()
+        .map_with_span(|value, span| Expression::Array(value, source.locate(span)))
+        .delimited_by(array_open, array_close);
+
+      let paren_open = just(Token::Control(Control::RoundBracketOpen));
+      let paren_close = just(Token::Control(Control::RoundBracketClose));
+      let parenthesized = expression.clone().delimited_by(paren_open, paren_close);
+
+      let code_block_open = just(Token::Control(Control::CurlyBracketOpen));
+      let code_block_close = just(Token::Control(Control::CurlyBracketClose));
+      let code_block = statements.delimited_by(code_block_open, code_block_close)
+        .map(Expression::Code);
+
+      let variable = identifier(database)
+        .map_with_span(|value, span| Expression::Variable(value, source.locate(span)));
+      let atom = choice((value, array, parenthesized, code_block, variable));
+
+      // Precedence 9 (Unary commands)
+      let atom = unary_command(database)
+        .map_with_span(|value, span| (value, span))
+        .repeated().then(atom)
+        .foldr(|(unary_command, span), expression| {
+          Expression::UnaryCommand(unary_command, Box::new(expression), source.locate(span))
+        });
+
+      let locate = |value: BinaryCommand, span: Span| {
+        (value, source.locate(span))
+      };
+
+      // Precedence 8 (Exponent)
+      let atom = apply_binary_command(atom.boxed(), locate, {
+        just(Token::Operator(Operator::Exp)).to(BinaryCommand::Exp)
+      });
+
+      // Precedence 7 (Multiply, Divide, Remainder, Modulo, ATAN2)
+      let atom = apply_binary_command(atom.boxed(), locate, {
+        choice((
+          just(Token::Operator(Operator::Mul)).to(BinaryCommand::Mul),
+          just(Token::Operator(Operator::Div)).to(BinaryCommand::Div),
+          just(Token::Operator(Operator::Rem)).to(BinaryCommand::Rem),
+          keyword("mod").to(BinaryCommand::Mod),
+          keyword("atan2").to(BinaryCommand::Atan2)
+        ))
+      });
+
+      // Precedence 6 (Add, Subtract, Max, Min)
+      let atom = apply_binary_command(atom.boxed(), locate, {
+        choice((
+          just(Token::Operator(Operator::Add)).to(BinaryCommand::Add),
+          just(Token::Operator(Operator::Sub)).to(BinaryCommand::Sub),
+          keyword("max").to(BinaryCommand::Max),
+          keyword("min").to(BinaryCommand::Min)
+        ))
+      });
+
+      // Precedence 5 (Else)
+      let atom = apply_binary_command(atom.boxed(), locate, {
+        keyword("else").to(BinaryCommand::Else)
+      });
+
+      // Precedence 4 (All other binary operators)
+      let atom = apply_binary_command(atom.boxed(), locate, binary_command(database));
+
+      // Precedence 3 (Equals, Not Equals, Greater, Less, GreaterEquals, LessEquals, Config Path)
+      let atom = apply_binary_command(atom.boxed(), locate, {
+        choice((
+          just(Token::Operator(Operator::Eq)).to(BinaryCommand::Eq),
+          just(Token::Operator(Operator::NotEq)).to(BinaryCommand::NotEq),
+          just(Token::Operator(Operator::Greater)).to(BinaryCommand::Greater),
+          just(Token::Operator(Operator::Less)).to(BinaryCommand::Less),
+          just(Token::Operator(Operator::GreaterEq)).to(BinaryCommand::GreaterEq),
+          just(Token::Operator(Operator::LessEq)).to(BinaryCommand::LessEq),
+          just(Token::Operator(Operator::ConfigPath)).to(BinaryCommand::ConfigPath)
+        ))
+      });
+
+      // Precedence 2 (And)
+      let atom = apply_binary_command(atom.boxed(), locate, {
+        choice((
+          just(Token::Operator(Operator::And)).to(BinaryCommand::And),
+          keyword("and").to(BinaryCommand::And)
+        ))
+      });
+
+      // Precedence 1 (Or)
+      let atom = apply_binary_command(atom.boxed(), locate, {
+        choice((
+          just(Token::Operator(Operator::Or)).to(BinaryCommand::Or),
+          keyword("or").to(BinaryCommand::Or)
+        ))
+      });
+
+      atom
+    });
+
+    // assignment without terminator, optionally including `private`
+    let assignment = identifier(database)
+      .then_ignore(just(Token::Operator(Operator::Assign)))
+      .then(expression.clone());
+    let assignment = keyword("private")
+      .or_not().map(|v| v.is_some()).then(assignment)
+      .map_with_span(|(local, (variable, expression)), span| match local {
+        true => Statement::AssignLocal(variable, expression, source.locate(span)),
+        false => Statement::AssignGlobal(variable, expression, source.locate(span))
+      });
+    assignment.or(expression.map(Statement::Expression))
+      .separated_by(just(Token::Control(Control::Terminator))).allow_trailing()
+      .map_with_span(|content, span| {
+        Statements { content, source: source.extract(span) }
+      })
+  })
+}
+
+fn apply_binary_command(
+  base: impl Parser<Token, Expression, Error = Simple<Token>> + Clone,
+  locate: impl Fn(BinaryCommand, Span) -> (BinaryCommand, SourceLocation),
+  command: impl Parser<Token, BinaryCommand, Error = Simple<Token>>
+) -> impl Parser<Token, Expression, Error = Simple<Token>> {
+  let command = command.map_with_span(locate);
+  base.clone().then(command.then(base).repeated())
+    .foldl(|expr1, ((command, location), expr2)| {
+      Expression::BinaryCommand(command, Box::new(expr1), Box::new(expr2), location)
+    })
+}
+
+fn identifier(database: &Database) -> impl Parser<Token, String, Error = Simple<Token>> + '_ {
+  select!(Token::Identifier(id) if !database.has_command(&id) && !is_special_command(&id) => id)
+}
+
+/// Matches unary commands, including special ones
+fn unary_command(database: &Database) -> impl Parser<Token, UnaryCommand, Error = Simple<Token>> + '_ {
+  select! {
+    Token::Operator(Operator::Add) => UnaryCommand::Plus,
+    Token::Operator(Operator::Sub) => UnaryCommand::Minus,
+    Token::Operator(Operator::Not) => UnaryCommand::Not,
+    Token::Identifier(id) if database.has_unary_command(&id) => UnaryCommand::Named(id)
+  }
+}
+
+/// Matches binary commands, not including special ones
+fn binary_command(database: &Database) -> impl Parser<Token, BinaryCommand, Error = Simple<Token>> + '_ {
+  select!(Token::Identifier(id) if database.has_binary_command(&id) => BinaryCommand::Named(id))
+}
+
+fn keyword(name: &'static str) -> impl Parser<Token, (), Error = Simple<Token>> {
+  select!(Token::Identifier(id) if id.eq_ignore_ascii_case(name) => ())
+}
+
+struct Source<'a> {
+  source: &'a str,
+  total_len: usize,
+  lines: Vec<usize>
+}
+
+impl<'a> Source<'a> {
+  fn new(source: &'a str) -> Self {
+    let mut total_len = 0;
+    let mut lines = vec![0];
+    for ch in source.chars() {
+      total_len += 1;
+      *lines.last_mut().unwrap() += 1;
+      if ch == '\n' {
+        lines.push(0);
+      };
+    };
+
+    Source {
+      source,
+      total_len,
+      lines
+    }
+  }
+
+  fn locate(&self, span: Span) -> SourceLocation {
+    let mut current_offset = span.start;
+    for (i, &line_len) in self.lines.iter().enumerate() {
+      if current_offset > line_len {
+        current_offset -= line_len;
+      } else {
+        return SourceLocation { line: i + 1, offset: span.start };
+      };
+    };
+
+    panic!()
+  }
+
+  fn extract(&self, span: Span) -> String {
+    self.source.chars()
+      .skip(span.start).take(span.end - span.start)
+      .collect::<String>()
+  }
+}
+
+#[derive(Debug)]
+pub enum ParserError {
+  LexingError(Vec<Simple<char>>),
+  ParsingError(Vec<Simple<Token>>)
+}
