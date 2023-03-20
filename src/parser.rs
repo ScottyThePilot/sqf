@@ -18,7 +18,8 @@ pub struct SourceLocation {
 
 pub fn run(database: &Database, input: impl AsRef<str>) -> Result<Statements, ParserError> {
   let input = input.as_ref();
-  let tokens = self::lexer::run(input).map_err(ParserError::LexingError)?;
+  let mut tokens = self::lexer::run(input).map_err(ParserError::LexingError)?;
+  self::lexer::strip_comments(&mut tokens);
   run_for_tokens(database, input, tokens).map_err(ParserError::ParsingError)
 }
 

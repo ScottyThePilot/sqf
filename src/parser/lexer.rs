@@ -11,8 +11,12 @@ macro_rules! chain_collect {
 }
 
 /// Will strip comments and macros from the given tokens list.
-pub fn strip(tokens: &mut Tokens) {
+pub fn strip_comments_and_macros(tokens: &mut Tokens) {
   tokens.retain(|(token, _)| !matches!(token, Token::Comment(..) | Token::Macro(..)));
+}
+
+pub fn strip_comments(tokens: &mut Tokens) {
+  tokens.retain(|(token, _)| !matches!(token, Token::Comment(..)));
 }
 
 
