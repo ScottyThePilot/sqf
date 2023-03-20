@@ -70,7 +70,7 @@ fn statements<'a, 'b: 'a>(database: &'a Database, source: &'b Source<'a>)
       let code_block = statements.delimited_by(code_block_open, code_block_close)
         .map(Expression::Code);
 
-      let variable = identifier(database)
+      let variable = variable(database)
         .map_with_span(|value, span| Expression::Variable(value, source.locate(span)));
       let atom = choice((value, array, parenthesized, code_block, variable));
 
@@ -143,7 +143,7 @@ fn statements<'a, 'b: 'a>(database: &'a Database, source: &'b Source<'a>)
     });
 
     // assignment without terminator, optionally including `private`
-    let assignment = identifier(database)
+    let assignment = variable(database)
       .then_ignore(just(Token::Operator(Operator::Assign)))
       .then(expression.clone());
     let assignment = keyword("private")
@@ -172,10 +172,6 @@ fn apply_binary_command(
     })
 }
 
-fn identifier(database: &Database) -> impl Parser<Token, String, Error = Simple<Token>> + '_ {
-  select!(Token::Identifier(id) if !database.has_command(&id) && !is_special_command(&id) => id)
-}
-
 /// Matches unary commands, including special ones
 fn unary_command(database: &Database) -> impl Parser<Token, UnaryCommand, Error = Simple<Token>> + '_ {
   select! {
@@ -188,9 +184,18 @@ fn unary_command(database: &Database) -> impl Parser<Token, UnaryCommand, Error 
 
 /// Matches binary commands, not including special ones
 fn binary_command(database: &Database) -> impl Parser<Token, BinaryCommand, Error = Simple<Token>> + '_ {
-  select!(Token::Identifier(id) if database.has_binary_command(&id) => BinaryCommand::Named(id))
+  select! {
+    Token::Operator(Operator::Associate) => BinaryCommand::Associate,
+    Token::Identifier(id) if database.has_binary_command(&id) => BinaryCommand::Named(id)
+  }
 }
 
+/// Matches any identifier that is a valid variable name (any that is not considered a command name)
+fn variable(database: &Database) -> impl Parser<Token, String, Error = Simple<Token>> + '_ {
+  select!(Token::Identifier(id) if !database.has_command(&id) && !is_special_command(&id) => id)
+}
+
+/// Matches a specific keyword identifier
 fn keyword(name: &'static str) -> impl Parser<Token, (), Error = Simple<Token>> {
   select!(Token::Identifier(id) if id.eq_ignore_ascii_case(name) => ())
 }
