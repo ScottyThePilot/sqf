@@ -92,24 +92,20 @@ fn statements<'a, 'b: 'a>(database: &'a Database, source: &'b Source<'a>)
       });
 
       // Precedence 7 (Multiply, Divide, Remainder, Modulo, ATAN2)
-      let atom = apply_binary_command(atom.boxed(), locate, {
-        choice((
-          just(Token::Operator(Operator::Mul)).to(BinaryCommand::Mul),
-          just(Token::Operator(Operator::Div)).to(BinaryCommand::Div),
-          just(Token::Operator(Operator::Rem)).to(BinaryCommand::Rem),
-          keyword("mod").to(BinaryCommand::Mod),
-          keyword("atan2").to(BinaryCommand::Atan2)
-        ))
+      let atom = apply_binary_command(atom.boxed(), locate, select! {
+        Token::Operator(Operator::Mul) => BinaryCommand::Mul,
+        Token::Operator(Operator::Div) => BinaryCommand::Div,
+        Token::Operator(Operator::Rem) => BinaryCommand::Rem,
+        Token::Identifier(id) if id.eq_ignore_ascii_case("mod") => BinaryCommand::Mod,
+        Token::Identifier(id) if id.eq_ignore_ascii_case("atan2") => BinaryCommand::Atan2
       });
 
       // Precedence 6 (Add, Subtract, Max, Min)
-      let atom = apply_binary_command(atom.boxed(), locate, {
-        choice((
-          just(Token::Operator(Operator::Add)).to(BinaryCommand::Add),
-          just(Token::Operator(Operator::Sub)).to(BinaryCommand::Sub),
-          keyword("max").to(BinaryCommand::Max),
-          keyword("min").to(BinaryCommand::Min)
-        ))
+      let atom = apply_binary_command(atom.boxed(), locate, select! {
+        Token::Operator(Operator::Add) => BinaryCommand::Add,
+        Token::Operator(Operator::Sub) => BinaryCommand::Sub,
+        Token::Identifier(id) if id.eq_ignore_ascii_case("max") => BinaryCommand::Max,
+        Token::Identifier(id) if id.eq_ignore_ascii_case("min") => BinaryCommand::Min
       });
 
       // Precedence 5 (Else)
@@ -121,32 +117,26 @@ fn statements<'a, 'b: 'a>(database: &'a Database, source: &'b Source<'a>)
       let atom = apply_binary_command(atom.boxed(), locate, binary_command(database));
 
       // Precedence 3 (Equals, Not Equals, Greater, Less, GreaterEquals, LessEquals, Config Path)
-      let atom = apply_binary_command(atom.boxed(), locate, {
-        choice((
-          just(Token::Operator(Operator::Eq)).to(BinaryCommand::Eq),
-          just(Token::Operator(Operator::NotEq)).to(BinaryCommand::NotEq),
-          just(Token::Operator(Operator::Greater)).to(BinaryCommand::Greater),
-          just(Token::Operator(Operator::Less)).to(BinaryCommand::Less),
-          just(Token::Operator(Operator::GreaterEq)).to(BinaryCommand::GreaterEq),
-          just(Token::Operator(Operator::LessEq)).to(BinaryCommand::LessEq),
-          just(Token::Operator(Operator::ConfigPath)).to(BinaryCommand::ConfigPath)
-        ))
+      let atom = apply_binary_command(atom.boxed(), locate, select! {
+        Token::Operator(Operator::Eq) => BinaryCommand::Eq,
+        Token::Operator(Operator::NotEq) => BinaryCommand::NotEq,
+        Token::Operator(Operator::Greater) => BinaryCommand::Greater,
+        Token::Operator(Operator::Less) => BinaryCommand::Less,
+        Token::Operator(Operator::GreaterEq) => BinaryCommand::GreaterEq,
+        Token::Operator(Operator::LessEq) => BinaryCommand::LessEq,
+        Token::Operator(Operator::ConfigPath) => BinaryCommand::ConfigPath
       });
 
       // Precedence 2 (And)
-      let atom = apply_binary_command(atom.boxed(), locate, {
-        choice((
-          just(Token::Operator(Operator::And)).to(BinaryCommand::And),
-          keyword("and").to(BinaryCommand::And)
-        ))
+      let atom = apply_binary_command(atom.boxed(), locate, select! {
+        Token::Operator(Operator::And) => BinaryCommand::And,
+        Token::Identifier(id) if id.eq_ignore_ascii_case("and") => BinaryCommand::And
       });
 
       // Precedence 1 (Or)
-      let atom = apply_binary_command(atom.boxed(), locate, {
-        choice((
-          just(Token::Operator(Operator::Or)).to(BinaryCommand::Or),
-          keyword("or").to(BinaryCommand::Or)
-        ))
+      let atom = apply_binary_command(atom.boxed(), locate, select! {
+        Token::Operator(Operator::Or) => BinaryCommand::Or,
+        Token::Identifier(id) if id.eq_ignore_ascii_case("or") => BinaryCommand::Or
       });
 
       atom
