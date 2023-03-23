@@ -50,7 +50,7 @@ fn statements<'a, 'b: 'a>(database: &'a Database, source: &'b Source<'a>)
         Token::Identifier(id) if id.eq_ignore_ascii_case("true") => Expression::Boolean(true),
         Token::Identifier(id) if id.eq_ignore_ascii_case("false") => Expression::Boolean(false),
         Token::Identifier(id) if database.has_nular_command(&id) => {
-          Expression::NularCommand(NularCommand::Named(id), source.locate(span))
+          Expression::NularCommand(NularCommand { name: id }, source.locate(span))
         }
       };
 
@@ -245,6 +245,7 @@ impl<'a> Source<'a> {
   }
 }
 
+// TODO: `std::error::Error` implementation
 #[derive(Debug)]
 pub enum ParserError {
   LexingError(Vec<Simple<char>>),

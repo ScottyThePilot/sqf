@@ -128,7 +128,10 @@ impl Expression {
           .map(Constant::Array)
       },
       Self::NularCommand(ref command, ..) if command.is_constant() => {
-        Some(Constant::NularCommand(command.to_str().to_lowercase()))
+        let command = try_normalize_name(&command.name)?;
+        debug_assert_ne!(command, "true", "do not provide `true` as a nular constant command");
+        debug_assert_ne!(command, "false", "do not provide `false` as a nular constant command");
+        Some(Constant::NularCommand(command))
       },
       _ => None
     })
@@ -138,7 +141,9 @@ impl Expression {
 #[derive(Debug, Error)]
 pub enum CompileError {
   #[error("cannot convert list longer than 2^16 elements")]
-  ListTooLong
+  ListTooLong,
+  #[error("invalid name {0}")]
+  InvalidName(String)
 }
 
 type CompileResult<T = ()> = Result<T, CompileError>;
@@ -154,8 +159,17 @@ impl Context {
     add_or_get_index(&mut self.constants_cache, constant)
   }
 
-  pub(crate) fn add_name(&mut self, name: impl AsRef<str>) -> CompileResult<u16> {
-    add_or_get_index(&mut self.names_cache, name.as_ref().to_lowercase())
+  pub(crate) fn add_name(&mut self, name: &str) -> CompileResult<u16> {
+    add_or_get_index(&mut self.names_cache, try_normalize_name(name)?)
+  }
+}
+
+fn try_normalize_name(name: &str) -> CompileResult<String> {
+  let name_lower = name.to_ascii_lowercase();
+  if crate::parser::database::is_valid_command(&name_lower) {
+    Ok(name_lower)
+  } else {
+    Err(CompileError::InvalidName(name.to_owned()))
   }
 }
 

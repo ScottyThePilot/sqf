@@ -64,25 +64,17 @@ pub enum Expression {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum NularCommand {
-  /// A named command.
-  Named(String)
+pub struct NularCommand {
+  pub name: String
 }
 
 impl NularCommand {
   pub fn is_constant(&self) -> bool {
-    // ArmaScriptCompiler contains code for serializing so-called "nular command constants"
-    // which are stored in the constants table just like numbers, strings and booleans rather than
-    // being called at runtime, however ArmaScriptCompiler doesn't ever seem to emit these
-
-    // TODO: actually determine whether something is a nular constant or not
-    false
+    crate::parser::database::is_constant_command(&self.name)
   }
 
   pub fn to_str(&self) -> &str {
-    match self {
-      Self::Named(name) => name
-    }
+    self.name.as_str()
   }
 }
 
@@ -155,12 +147,10 @@ impl BinaryCommand {
 
 #[derive(Debug, Error)]
 pub enum Error {
+  #[cfg(feature = "compiler")]
   #[error(transparent)]
   CompileError(#[from] crate::compiler::CompileError),
+  #[cfg(feature = "compiler")]
   #[error(transparent)]
   SerializeError(#[from] crate::compiler::serializer::SerializeError)
-}
-
-pub(crate) mod sealed {
-  pub trait Sealed {}
 }
