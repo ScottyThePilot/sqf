@@ -1,3 +1,4 @@
+pub mod analysis;
 #[cfg(feature = "compiler")]
 pub mod compiler;
 #[cfg(feature = "parser")]
