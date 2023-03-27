@@ -425,11 +425,10 @@ impl Compiled {
     (0..constants_cache_len).map(|_| Constant::deserialize(reader)).collect()
   }
 
-  // TODO: Figure this out
-  /// I have absolutely no clue how you're supposed to figure out the sizes of the command/name
-  /// directory and the constants table just based on the binary alone. All you appear to have
-  /// access to is the *uncompressed* buffer length, not the length of the total buffer to decompress,
-  /// so you're stuck having to provide these manually.
+  // TODO: fix this and make it public
+  // compiler deserialization/decompilation isn't public right now because there's no way
+  // to make it work properly without an LZO decoding algorithm that can decode from a buffer/stream
+  // without knowing where the buffer/stream ends
   pub(crate) fn deserialize(
     reader: &mut impl Read,
     name_cache_buffer_len: usize,
