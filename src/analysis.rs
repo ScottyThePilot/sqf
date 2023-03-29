@@ -14,7 +14,7 @@ macro_rules! match_option {
 
 macro_rules! name_eq {
   ($command:expr, $name:expr) => {
-    $command.to_str().eq_ignore_ascii_case($name)
+    $command.as_str().eq_ignore_ascii_case($name)
   };
 }
 

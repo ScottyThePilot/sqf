@@ -72,12 +72,12 @@ fn statements<'a, 'b: 'a>(database: &'a Database, source: &'b Source<'a>)
 
       let variable = variable(database)
         .map_with_span(|value, span| Expression::Variable(value, source.locate(span)));
-      let atom = choice((value, array, parenthesized, code_block, variable));
+      let base = choice((value, array, parenthesized, code_block, variable));
 
-      // Precedence 9 (Unary commands)
-      let atom = unary_command(database)
+      // Precedence 10 (Unary commands)
+      let base = unary_command(database)
         .map_with_span(|value, span| (value, span))
-        .repeated().then(atom)
+        .repeated().then(base)
         .foldr(|(unary_command, span), expression| {
           Expression::UnaryCommand(unary_command, Box::new(expression), source.locate(span))
         });
@@ -86,13 +86,18 @@ fn statements<'a, 'b: 'a>(database: &'a Database, source: &'b Source<'a>)
         (value, source.locate(span))
       };
 
+      // Precedence 9 (Select)
+      let base = apply_binary_command(base.boxed(), locate, {
+        just(Token::Operator(Operator::Select)).to(BinaryCommand::Select)
+      });
+
       // Precedence 8 (Exponent)
-      let atom = apply_binary_command(atom.boxed(), locate, {
+      let base = apply_binary_command(base.boxed(), locate, {
         just(Token::Operator(Operator::Exp)).to(BinaryCommand::Exp)
       });
 
       // Precedence 7 (Multiply, Divide, Remainder, Modulo, ATAN2)
-      let atom = apply_binary_command(atom.boxed(), locate, select! {
+      let base = apply_binary_command(base.boxed(), locate, select! {
         Token::Operator(Operator::Mul) => BinaryCommand::Mul,
         Token::Operator(Operator::Div) => BinaryCommand::Div,
         Token::Operator(Operator::Rem) => BinaryCommand::Rem,
@@ -101,7 +106,7 @@ fn statements<'a, 'b: 'a>(database: &'a Database, source: &'b Source<'a>)
       });
 
       // Precedence 6 (Add, Subtract, Max, Min)
-      let atom = apply_binary_command(atom.boxed(), locate, select! {
+      let base = apply_binary_command(base.boxed(), locate, select! {
         Token::Operator(Operator::Add) => BinaryCommand::Add,
         Token::Operator(Operator::Sub) => BinaryCommand::Sub,
         Token::Identifier(id) if id.eq_ignore_ascii_case("max") => BinaryCommand::Max,
@@ -109,15 +114,15 @@ fn statements<'a, 'b: 'a>(database: &'a Database, source: &'b Source<'a>)
       });
 
       // Precedence 5 (Else)
-      let atom = apply_binary_command(atom.boxed(), locate, {
+      let base = apply_binary_command(base.boxed(), locate, {
         keyword("else").to(BinaryCommand::Else)
       });
 
       // Precedence 4 (All other binary operators)
-      let atom = apply_binary_command(atom.boxed(), locate, binary_command(database));
+      let base = apply_binary_command(base.boxed(), locate, binary_command(database));
 
       // Precedence 3 (Equals, Not Equals, Greater, Less, GreaterEquals, LessEquals, Config Path)
-      let atom = apply_binary_command(atom.boxed(), locate, select! {
+      let base = apply_binary_command(base.boxed(), locate, select! {
         Token::Operator(Operator::Eq) => BinaryCommand::Eq,
         Token::Operator(Operator::NotEq) => BinaryCommand::NotEq,
         Token::Operator(Operator::Greater) => BinaryCommand::Greater,
@@ -128,18 +133,18 @@ fn statements<'a, 'b: 'a>(database: &'a Database, source: &'b Source<'a>)
       });
 
       // Precedence 2 (And)
-      let atom = apply_binary_command(atom.boxed(), locate, select! {
+      let base = apply_binary_command(base.boxed(), locate, select! {
         Token::Operator(Operator::And) => BinaryCommand::And,
         Token::Identifier(id) if id.eq_ignore_ascii_case("and") => BinaryCommand::And
       });
 
       // Precedence 1 (Or)
-      let atom = apply_binary_command(atom.boxed(), locate, select! {
+      let base = apply_binary_command(base.boxed(), locate, select! {
         Token::Operator(Operator::Or) => BinaryCommand::Or,
         Token::Identifier(id) if id.eq_ignore_ascii_case("or") => BinaryCommand::Or
       });
 
-      atom
+      base
     });
 
     // assignment without terminator, optionally including `private`

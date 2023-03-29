@@ -82,18 +82,18 @@ impl Expression {
           instructions.push(Instruction::MakeArray(array_len, location.into()));
         },
         Self::NularCommand(ref command, location) => {
-          let name_index = ctx.add_name(command.to_str())?;
+          let name_index = ctx.add_name(command.as_str())?;
           instructions.push(Instruction::CallNular(name_index, location.into()));
         },
         Self::UnaryCommand(ref command, ref expr, location) => {
           expr.compile_instructions(instructions, ctx)?;
-          let name_index = ctx.add_name(command.to_str())?;
+          let name_index = ctx.add_name(command.as_str())?;
           instructions.push(Instruction::CallUnary(name_index, location.into()));
         },
         Self::BinaryCommand(ref command, ref expr1, ref expr2, location) => {
           expr1.compile_instructions(instructions, ctx)?;
           expr2.compile_instructions(instructions, ctx)?;
-          let name_index = ctx.add_name(command.to_str())?;
+          let name_index = ctx.add_name(command.as_str())?;
           instructions.push(Instruction::CallBinary(name_index, location.into()));
         },
         Self::Variable(ref name, location) => {

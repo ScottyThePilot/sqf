@@ -74,7 +74,7 @@ impl NularCommand {
     crate::parser::database::is_constant_command(&self.name)
   }
 
-  pub fn to_str(&self) -> &str {
+  pub fn as_str(&self) -> &str {
     self.name.as_str()
   }
 }
@@ -90,7 +90,7 @@ pub enum UnaryCommand {
 }
 
 impl UnaryCommand {
-  pub fn to_str(&self) -> &str {
+  pub fn as_str(&self) -> &str {
     match self {
       Self::Named(name) => name,
       Self::Plus => "+",
@@ -114,11 +114,12 @@ pub enum BinaryCommand {
   Else,
   Add, Sub, Max, Min,
   Mul, Div, Rem, Mod, Atan2,
-  Exp
+  Exp,
+  Select
 }
 
 impl BinaryCommand {
-  pub fn to_str(&self) -> &str {
+  pub fn as_str(&self) -> &str {
     match self {
       Self::Named(name) => name,
       Self::Or => "||",
@@ -141,7 +142,8 @@ impl BinaryCommand {
       Self::Mod => "mod",
       Self::Atan2 => "atan2",
       Self::Exp => "^",
-      Self::Associate => ":"
+      Self::Associate => ":",
+      Self::Select => "#"
     }
   }
 }

@@ -27,7 +27,7 @@ pub enum Token {
   /// Contains the entire contents of the comment.
   Comment(String),
   /// A pre-processor macro.
-  Macro(String, Vec<Token>),
+  Macro(String, String),
   /// An operator.
   Operator(Operator),
   /// A special control character.
@@ -81,10 +81,8 @@ pub enum Operator {
   Assign,
   /// Colon `:`
   Associate,
-  /// Single pound sign `#`, only available inside macros
-  MacroQuote,
-  /// Double pound sign `##`, only available inside macros
-  MacroConcat,
+  /// Pound sign `#`
+  Select
 }
 
 impl Operator {
@@ -108,8 +106,7 @@ impl Operator {
       Self::Exp => "^",
       Self::Assign => "=",
       Self::Associate => ":",
-      Self::MacroQuote => "#",
-      Self::MacroConcat => "##"
+      Self::Select => "#"
     }
   }
 }
@@ -125,13 +122,8 @@ fn lexer() -> impl Parser<char, Tokens, Error = Simple<char>> {
     .padded().repeated().then_ignore(end())
 }
 
-fn lexer_macro_inner() -> impl Parser<char, Vec<Token>, Error = Simple<char>> {
-  macro_operator().map(Token::Operator).or(base())
-    .padded().repeated().then_ignore(end())
-}
-
 fn base() -> impl Parser<char, Token, Error = Simple<char>> {
-  let number = number().map(crate::Scalar).map(Token::Number);
+  let number = number().map(Token::Number);
   let identifier = ident().map(Token::Identifier);
   let string = string('\"').or(string('\'')).map(Token::String);
 
@@ -158,18 +150,11 @@ fn preprocessor_token() -> impl Parser<char, Token, Error = Simple<char>> {
 }
 
 // The current way I'm handling macros is to capture everything after the
-// `#`, and any subsequent lines (as long as the previous line ended with a `\`)
-// and then split that content into tokens to pass on to the parser
-fn preprocessor_macro() -> impl Parser<char, (String, Vec<Token>), Error = Simple<char>> {
+// `#<ident>`, and any subsequent lines (as long as the previous line ended with a `\`)
+fn preprocessor_macro() -> impl Parser<char, (String, String), Error = Simple<char>> {
   let newline_escape = just('\\').then(newline()).to('\n');
   let content = newline_escape.or(newline().not()).repeated().collect::<String>();
-  just('#').ignore_then(ident()).then(content).try_map(|(command, content), _| {
-    // TODO: consider changing this out for something better
-    // right now i'm just using the lexer itself because it's simple
-    lexer_macro_inner().parse(content)
-      .map_err(|errors| errors.into_iter().next().unwrap())
-      .map(|tokens| (command, tokens))
-  })
+  just('#').ignore_then(ident()).then(content)
 }
 
 fn multi_line_comment() -> impl Parser<char, String, Error = Simple<char>> {
@@ -190,13 +175,14 @@ fn newline() -> impl Parser<char, (), Error = Simple<char>> {
   just("\r\n").or(just("\n")).ignored()
 }
 
-fn number() -> impl Parser<char, f32, Error = Simple<char>> {
+fn number() -> impl Parser<char, crate::Scalar<f32>, Error = Simple<char>> {
   choice((
     number_float_exponent(),
     number_float_basic(),
     number_hex().map(|value| value as f32),
     number_int().map(|value| value as f32),
   ))
+    .map(crate::Scalar)
 }
 
 fn number_hex() -> impl Parser<char, u32, Error = Simple<char>> {
@@ -241,13 +227,6 @@ fn string(delimiter: char) -> impl Parser<char, String, Error = Simple<char>> {
   just(delimiter).ignore_then(content.repeated()).then_ignore(just(delimiter)).collect()
 }
 
-fn macro_operator() -> impl Parser<char, Operator, Error = Simple<char>> + Copy {
-  choice((
-    just("##").to(Operator::MacroConcat),
-    just("#").to(Operator::MacroQuote)
-  ))
-}
-
 fn operator() -> impl Parser<char, Operator, Error = Simple<char>> + Copy {
   choice((
     just("&&").to(Operator::And),
@@ -267,7 +246,8 @@ fn operator() -> impl Parser<char, Operator, Error = Simple<char>> + Copy {
     just("%").to(Operator::Rem),
     just("^").to(Operator::Exp),
     just("=").to(Operator::Assign),
-    just(":").to(Operator::Associate)
+    just(":").to(Operator::Associate),
+    just("#").to(Operator::Select)
   ))
 }
 

@@ -24,7 +24,11 @@ pub struct SourceInfo {
 
 impl From<crate::parser::SourceLocation> for SourceInfo {
   fn from(location: crate::parser::SourceLocation) -> Self {
-    SourceInfo { offset: location.offset as u32, file_index: 0, file_line: location.line as u16 }
+    SourceInfo {
+      offset: location.offset.try_into().unwrap(),
+      file_line: location.line.try_into().unwrap(),
+      file_index: 0
+    }
   }
 }
 
@@ -179,13 +183,16 @@ impl Instructions {
     Ok(())
   }
 
+  #[allow(dead_code)]
   pub(crate) fn deserialize(reader: &mut impl Read) -> DeserializeResult<Self> {
-    let content_string = reader.read_u64::<LE>()? as u16;
+    // if this panics, i've got no clue what's with your SQFC
+    // only 2^16 constants can be embedded anyways, so any value above that is probably technically invalid
+    let source_string_index: u16 = reader.read_u64::<LE>()?.try_into().unwrap();
     let instructions_len = reader.read_u32::<LE>()? as usize;
     let instructions = (0..instructions_len)
       .map(|_| Instruction::deserialize(reader))
       .collect::<DeserializeResult<Vec<Instruction>>>()?;
-    Ok(Instructions { contents: instructions, source_string_index: content_string })
+    Ok(Instructions { contents: instructions, source_string_index })
   }
 }
 
@@ -247,6 +254,7 @@ impl Constant {
     Ok(())
   }
 
+  #[allow(dead_code)]
   pub(crate) fn deserialize(reader: &mut impl Read) -> DeserializeResult<Self> {
     Ok(match reader.read_u8()? {
       0 => Self::Code(Instructions::deserialize(reader)?),
@@ -276,6 +284,7 @@ impl PartialEq for Constant {
 
 impl Eq for Constant {}
 
+#[allow(dead_code)]
 fn deserialize_constant_array(reader: &mut impl Read) -> DeserializeResult<Vec<Constant>> {
   let array_len = reader.read_u32::<LE>()? as usize;
   (0..array_len).map(|_| Constant::deserialize(reader)).collect()
@@ -305,6 +314,7 @@ impl BlockType {
     }
   }
 
+  #[allow(dead_code)]
   fn deserialize(reader: &mut impl Read) -> DeserializeResult<Self> {
     Self::from_byte(reader.read_u8()?).map_err(DeserializeError::IncorrectBlockTypeTag)
   }
@@ -415,11 +425,13 @@ impl Compiled {
     Ok(())
   }
 
+  #[allow(dead_code)]
   fn deserialize_name_cache(reader: &mut impl Read) -> DeserializeResult<Vec<String>> {
     let name_cache_len = reader.read_u16::<LE>()? as usize;
     (0..name_cache_len).map(|_| deserialize_string(reader)).collect()
   }
 
+  #[allow(dead_code)]
   fn deserialize_constants_cache(reader: &mut impl Read) -> DeserializeResult<Vec<Constant>> {
     let constants_cache_len = reader.read_u16::<LE>()? as usize;
     (0..constants_cache_len).map(|_| Constant::deserialize(reader)).collect()
@@ -429,6 +441,7 @@ impl Compiled {
   // compiler deserialization/decompilation isn't public right now because there's no way
   // to make it work properly without an LZO decoding algorithm that can decode from a buffer/stream
   // without knowing where the buffer/stream ends
+  #[allow(dead_code)]
   pub(crate) fn deserialize(
     reader: &mut impl Read,
     name_cache_buffer_len: usize,
