@@ -16,29 +16,29 @@ pub struct SourceLocation {
   pub offset: usize
 }
 
-pub fn run(database: &Database, input: impl AsRef<str>) -> Result<Statements, ParserError> {
-  let input = input.as_ref();
-  let mut tokens = self::lexer::run(input).map_err(ParserError::LexingError)?;
+pub fn run(database: &Database, input: impl Into<String>) -> Result<Statements, ParserError> {
+  let input = input.into();
+  let mut tokens = self::lexer::run(&input).map_err(ParserError::LexingError)?;
   self::lexer::strip_comments(&mut tokens);
   run_for_tokens(database, input, tokens).map_err(ParserError::ParsingError)
 }
 
-pub fn run_for_tokens<I>(database: &Database, source: impl AsRef<str>, input: I) -> Result<Statements, Vec<Simple<Token>>>
+pub fn run_for_tokens<I>(database: &Database, source: impl Into<String>, input: I) -> Result<Statements, Vec<Simple<Token>>>
 where I: IntoIterator<Item = (Token, Span)> {
-  let source = Source::new(source.as_ref());
+  let source = Source::new(source.into());
   let eoi = source.total_len..source.total_len + 1;
   let statements = parser(database, &source)
     .parse(Stream::from_iter(eoi, input.into_iter()))?;
   Ok(statements)
 }
 
-fn parser<'a, 'b: 'a>(database: &'a Database, source: &'b Source<'a>)
--> impl Parser<Token, Statements, Error = Simple<Token>> + 'a + 'b {
+fn parser<'a>(database: &'a Database, source: &'a Source)
+-> impl Parser<Token, Statements, Error = Simple<Token>> + 'a {
   statements(database, source).then_ignore(end())
 }
 
-fn statements<'a, 'b: 'a>(database: &'a Database, source: &'b Source<'a>)
--> impl Parser<Token, Statements, Error = Simple<Token>> + 'a + 'b {
+fn statements<'a>(database: &'a Database, source: &'a Source)
+-> impl Parser<Token, Statements, Error = Simple<Token>> + 'a {
   recursive(|statements| {
     let expression = recursive(|expression| {
       let value = select! { |span|
@@ -205,14 +205,14 @@ fn keyword(name: &'static str) -> impl Parser<Token, (), Error = Simple<Token>> 
   select!(Token::Identifier(id) if id.eq_ignore_ascii_case(name) => ())
 }
 
-struct Source<'a> {
-  source: &'a str,
+struct Source {
+  source: String,
   total_len: usize,
   lines: Vec<usize>
 }
 
-impl<'a> Source<'a> {
-  fn new(source: &'a str) -> Self {
+impl Source {
+  fn new(source: String) -> Self {
     let mut total_len = 0;
     let mut lines = vec![0];
     for ch in source.chars() {
