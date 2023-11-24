@@ -43,7 +43,7 @@ pub const COMMANDS_OPERATORS: &[&'static str] = &[
   "==", "!=", ">>",
   ">=", "<=", ">", "<",
   "+", "-", "*", "/", "%",
-  "^", ":"
+  "^", ":", "#"
 ];
 
 /// Contains a list of most nular, unary, and binary commands.
